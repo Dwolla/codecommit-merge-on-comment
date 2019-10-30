@@ -1,0 +1,62 @@
+service: codecommit-merge-on-comment
+
+provider:
+  name: aws
+  runtime: java8
+  memorySize: 1024
+  timeout: 60
+  region: us-west-2
+  deploymentBucket:
+    name: ${opt:bucket}
+    serverSideEncryption: "AES256"
+  cfnRole: "arn:aws:iam::${opt:account}:role/cloudformation/deployer/cloudformation-deployer"
+  iamManagedPolicies:
+    - !Ref CodeCommitPolicy
+    - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
+  logRetentionInDays: 7
+  stackTags:
+    Creator: serverless
+    Environment: ${opt:stage}
+    Project: ${self:service}
+    Team: platform
+    Visibility: internal
+
+package:
+#  artifact: target/stage.zip
+  artifact: target/scala-2.13/${self:service}.jar
+
+functions:
+  merge-on-commit:
+    handler: com.dwolla.codecommit.merger.LambdaHandler
+    events:
+      - sns: CodeCommitPullRequestComments
+
+resources:
+  Description: "A serverless app to listen to CodeCommit PR Comment feeds, and merge pull requests when someone comments approvingly"
+  Resources:
+    CodeCommit:
+      Type: AWS::CodeCommit::Repository
+#      Code:
+#        S3: s3://${opt:bucket}/${self:artifactDirectoryName}/${self:artifact}
+      Properties:
+        RepositoryDescription: ${self:resources.Description}
+        RepositoryName: ${self:service}
+    CodeCommitPolicy:
+      Type: AWS::IAM::ManagedPolicy
+      Properties:
+        Description: Allow Lambda to merge pull requests
+        Path: /CodeCommit/
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - codecommit:Merge*
+              Resource:
+                !GetAtt CodeCommit.Arn
+              Condition:
+                StringEqualsIfExists:
+                  "codecommit:References":
+                    - "refs/heads/master"
+                "Null":
+                  "codecommit:References": false

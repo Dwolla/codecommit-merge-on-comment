@@ -2,7 +2,7 @@ import sbtassembly.Log4j2MergeStrategy
 
 lazy val buildSettings = Seq(
   organization := "com.dwolla",
-  homepage := Some(url("https://github.com/Dwolla/rabbitmq-topology-backup")),
+  homepage := Some(url("https://github.com/Dwolla/codecommit-merge-on-comment")),
   licenses += ("MIT", url("http://opensource.org/licenses/MIT")),
   startYear := Option(2019),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full),

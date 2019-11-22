@@ -2,115 +2,70 @@ package com.dwolla.codecommit.merger
 
 import cats.data._
 import cats.implicits._
-import com.dwolla.testutils.IOSpec
-import org.scalatest.Matchers
+import cats.scalatest._
+import com.dwolla.codecommit.merger.model._
+import com.dwolla.codecommit.merger.PullRequestCommentValidation._
+import com.dwolla.codecommit.merger.ValidationSpecHelpers._
+import org.scalatest.{FlatSpec, Matchers}
+import software.amazon.awssdk.services.codecommit.model.{Comment, PullRequest}
 
-class ValidationSpec extends IOSpec with Matchers {
+class ValidationSpec extends FlatSpec with Matchers with ValidatedMatchers with EitherMatchers {
 
-  behavior of "Validated Kleisli"
+  behavior of "author validation"
 
-  it should "shortcut failures" in {
-    implicit class KleisliAndThen[E, A, B](k: Kleisli[Validated[E, *], A, B]) {
-      def validatedAndThen[C](f: B => Validated[E, C]): Kleisli[Validated[E, *], A, C] =
-        validatedAndThen(Kleisli(f))
-
-      def validatedAndThen[C](fa: Kleisli[Validated[E, *], B, C]): Kleisli[Validated[E, *], A, C] =
-        k.mapF(_.toEither).andThen(fa.mapF(_.toEither)).mapF(_.toValidated)
-    }
-
-    val either: Kleisli[Either[String, *], Int, Int] = Kleisli({
-      case 1 => "one".asLeft
-      case i => i.asRight
-    })
-
-    val validatorA: Int => ValidatedNel[String, Unit] = {
-      case 1 => "validated A".invalidNel
-      case _ => ().valid
-    }
-
-    val validatorB: Int => ValidatedNel[String, Unit] = {
-      case 1 => "validated B".invalidNel
-      case _ => ().valid
-    }
-
-    val kleisliValidatorA: Kleisli[ValidatedNel[String, *], Int, Unit] = Kleisli(validatorA)
-    val kleisliValidatorB: Kleisli[ValidatedNel[String, *], Int, Unit] = Kleisli(validatorB)
-
-    val combined: Kleisli[ValidatedNel[String, *], Int, Unit] = List(kleisliValidatorA, kleisliValidatorB).combineAll
-
-    val expected: Kleisli[ValidatedNel[String, *], Int, Int] = either.mapF(_.toValidatedNel)
-
-    val y: Kleisli[ValidatedNel[String, *], Int, Unit] = expected.validatedAndThen(combined)
-
-    val x: Kleisli[ValidatedNel[String, *], Int, Unit] =
-      expected.mapF(_.toEither).andThen(combined.mapF(_.toEither)).mapF(_.toValidated)
-
-    x.run(1) should be("one".invalidNel)
-    y.run(1) should be("one".invalidNel)
+  it should "reject strings that don't match the regexes" in {
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment(""), pr(""))) should (haveInvalid("The pull request author `` cannot be interpreted as an IAM user or assumed role") and haveInvalid("The comment author `` cannot be interpreted as an IAM user or assumed role"))
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:iam:::user/bholt"), pr(""))) should haveInvalid("The pull request author `` cannot be interpreted as an IAM user or assumed role")
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment(""), pr("arn:aws:iam:::user/bholt"))) should haveInvalid("The comment author `` cannot be interpreted as an IAM user or assumed role")
   }
 
-  it should "accumulate errors" in {
-    val either: Int => Either[String, Int] = {
-      case 1 => "one".asLeft
-      case i => i.asRight
-    }
-
-    val validatorA: Int => ValidatedNel[String, Unit] = {
-      case 2 => "validated A".invalidNel
-      case _ => ().valid
-    }
-
-    val validatorB: Int => ValidatedNel[String, Unit] = {
-      case 2 => "validated B".invalidNel
-      case _ => ().valid
-    }
-
-    val expected: ValidatedNel[String, Unit] =
-      either(2).toValidatedNel.andThen(i => List(validatorA, validatorB).map(_ (i)).combineAll)
-
-    expected should be("validated A".invalidNel[Unit] |+| "validated B".invalidNel)
+  it should "reject assumed roles" in {
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:sts:::assumed-role/super-admin/hacker"), pr("arn:aws:sts:::assumed-role/developer/session"))) should (haveInvalid("Assumed role `developer` (via session `session`) is not allowed to be a pull request author") and haveInvalid("Assumed role `super-admin` (via session `hacker`) is not allowed to be a comment author"))
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:iam::123456789012:user/bholt"), pr("arn:aws:sts:us-east-1:123456789012:assumed-role/super-admin/hacker"))) should haveInvalid("Assumed role `super-admin` (via session `hacker`) is not allowed to be a pull request author")
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:sts:::assumed-role/developer/session"), pr("arn:aws:iam::123456789012:user/bholt"))) should haveInvalid("Assumed role `developer` (via session `session`) is not allowed to be a comment author")
   }
 
-  it should "come up with a valid result" in {
-    val either: Int => Either[String, Int] = {
-      case 1 => "one".asLeft
-      case i => i.asRight
-    }
-
-    val validatorA: Int => ValidatedNel[String, Unit] = {
-      case 2 => "validated A".invalidNel
-      case _ => ().valid
-    }
-
-    val validatorB: Int => ValidatedNel[String, Unit] = {
-      case 2 => "validated B".invalidNel
-      case _ => ().valid
-    }
-
-    val expected: ValidatedNel[String, Int] =
-      either(42).toValidatedNel.andThen(i => List(validatorA, validatorB).map(_ (i)).combineAll.map(_ => i))
-
-    expected should be(42.valid)
+  it should "reject when the same IAM user is the author of both the pull request and comment" in {
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:iam::123456789012:user/bholt"), pr("arn:aws:iam::123456789012:user/bholt"))) should haveInvalid("Pull request author cannot approve their own PR")
   }
 
-  behavior of "tap"
-
-  it should "pass thru the input on success" in {
-    val k: Kleisli[ValidatedNel[String, *], String, String] = Kleisli((_: String) match {
-      case "good" => ().validNel
-      case s => s.invalidNel
-    }).tap[String]
-
-    k.run("good") should be("good".validNel)
+  it should "pass when different IAM users author the pull request and comment" in {
+    validateCommenterIsNotAuthorViaRoleAssumption(CommentContext(comment("arn:aws:iam::123456789012:user/bholt"), pr("arn:aws:iam::123456789012:user/not-bholt"))) should beValid(())
   }
 
-  it should "return errors on failure" in {
-    val k: Kleisli[ValidatedNel[String, *], String, String] = Kleisli((_: String) match {
-      case "good" => ().validNel
-      case _ => "nope".invalidNel
-    }).tap[String]
+  behavior of "comment validation"
 
-    k.run("bad") should be("nope".invalidNel)
+  it should "reject comments that include the trigger words as part of a larger comment" in {
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("I would say approved, but this doesn't lgtm").build()) should beLeft("Comment is not an approval".pure[NonEmptyList])
   }
 
+  it should """accept "lgtm" comments""" in {
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("lgtm").build()) should beRight(())
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("LGTM").build()) should beRight(())
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("lgTM").build()) should beRight(())
+  }
+
+  it should """accept "approved" comments""" in {
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("approved").build()) should beRight(())
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("APPROVED").build()) should beRight(())
+    isApproval(Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("Approved").build()) should beRight(())
+  }
+
+  behavior of "combined comment and PR validation"
+
+  it should "pass when different IAM users author the pull request and comment, and the comment is an approval" in {
+    val input = comment("arn:aws:iam::123456789012:user/bholt")
+    validate(CommentContext(input, pr("arn:aws:iam::123456789012:user/not-bholt"))) should beRight(input)
+  }
+}
+
+object ValidationSpecHelpers {
+  def validComment: Comment =
+    Comment.builder().authorArn("arn:aws:iam::123456789012:user/reviewer").content("lgtm").build()
+
+  def validPR: PullRequest =
+    pr("arn:aws:iam:::user/developer")
+
+  def comment(arn: String): Comment = Comment.builder().authorArn(arn).content("lgtm").build()
+  def pr(arn: String): PullRequest = PullRequest.builder().authorArn(arn).build()
 }

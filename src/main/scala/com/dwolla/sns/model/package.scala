@@ -13,11 +13,12 @@ package object model {
   private val parseStringAsJson: Prism[String, Json] =
     Prism[String, Json](parser.parse(_).toOption)(Printer.noSpaces.print)
 
-  def messagesInRecordsTraversal[A: Decoder : Encoder](json: Json): List[A] =
+  def messagesInRecordsTraversal[A: Decoder : Encoder](json: Json): List[A] = {
     snsMessage
       .composePrism(parseStringAsJson)
       .composeOptional(snsMessageDetail)
       .composePrism(UnsafeOptics.parse[A])
       .getAll(json)
+  }
 
 }

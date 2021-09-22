@@ -30,7 +30,7 @@ lazy val `codecommit-merge-on-comment` = (project in file("."))
     libraryDependencies ++= {
       val fs2AwsVersion = "2.0.0-M5"
       Seq(
-        "software.amazon.awssdk" % "codecommit" % "2.7.18",
+        "software.amazon.awssdk" % "codecommit" % "2.7.36",
         "org.typelevel" %% "cats-core" % "2.0.0",
         "io.circe" %% "circe-optics" % "0.12.0",
         "com.dwolla" %% "fs2-aws-java-sdk2" % fs2AwsVersion,

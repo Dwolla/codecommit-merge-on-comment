@@ -32,7 +32,7 @@ lazy val `codecommit-merge-on-comment` = (project in file("."))
       Seq(
         "software.amazon.awssdk" % "codecommit" % "2.7.18",
         "org.typelevel" %% "cats-core" % "2.0.0",
-        "io.circe" %% "circe-optics" % "0.12.0",
+        "io.circe" %% "circe-optics" % "0.14.1",
         "com.dwolla" %% "fs2-aws-java-sdk2" % fs2AwsVersion,
         "com.dwolla" %% "fs2-aws-lambda-io-app" % fs2AwsVersion,
         "com.dwolla" %% "testutils-scalatest-fs2" % "2.0.0-M3" % Test,

@@ -28,7 +28,7 @@ lazy val `codecommit-merge-on-comment` = (project in file("."))
   .settings(
     description := "Listen to CodeCommit PR Comment feeds, and merge pull requests when someone comments approvingly",
     libraryDependencies ++= {
-      val fs2AwsVersion = "2.0.0-M5"
+      val fs2AwsVersion = "2.0.0-M13"
       Seq(
         "software.amazon.awssdk" % "codecommit" % "2.7.18",
         "org.typelevel" %% "cats-core" % "2.0.0",
